@@ -1,5 +1,6 @@
 import pygame  # Импортируем библиотеку Pygame для создания графического интерфейса
 from game import MemorySettings
+from game.memory_game import start_memory_game
 
 class MainMenu:
     def __init__(self, screen):
@@ -60,7 +61,7 @@ class MainMenu:
             # Проверяем, существует ли прямоугольник и попадает ли в него курсор
             if btn.get("rect") and btn["rect"].collidepoint(x, y):
                 if btn["difficulty"]:  # Если это не кнопка "Выход"
-                    print(btn["difficulty"])  # Печатаем выбранную сложность (для проверки работоспособности программы)
+                    start_memory_game(self.screen, btn["difficulty"])
                 else:
                     pygame.quit()  # Закрываем Pygame
                     exit()  # Выходим из программы
