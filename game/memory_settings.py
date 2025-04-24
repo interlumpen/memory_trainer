@@ -4,6 +4,14 @@ class MemorySettings:
         self.screen_height = 600 # высота окна
         self.bg_color = (30, 30, 60) #цвет заливки
 
+        self.sound_flip = "game/sounds/flip.wav"
+        self.sound_match = "game/sounds/match.wav"
+        self.sound_mismatch = "game/sounds/mismatch.wav"
+        self.sound_win = "game/sounds/win.wav"
+        self.sound_lose = "game/sounds/lose.wav"
+        self.sound_button = "game/sounds/button.wav"
+        self.sound_background = "game/sounds/background.wav"
+
         # Настройки сложности
         self.difficulty = difficulty
         self.set_difficulty(difficulty)

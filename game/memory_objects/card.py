@@ -1,63 +1,120 @@
-import pygame  # Импортируем библиотеку Pygame для создания графического интерфейса
+import pygame
+import math
+
 
 class Card:
     def __init__(self, rect, image, id):
-        """
-        Инициализация карты.
+        self.rect = rect
+        self.image = image
+        self.id = id
+        self.revealed = False
+        self.matched = False
+        self.back_color = (100, 100, 200)
+        self.animation_angle = 0
+        self.animating = False
+        self.animation_speed = 0.2
+        self.scale = 1.0
+        self.pulse_direction = 0.01
+        self.fade_alpha = 255  # Прозрачность для эффекта исчезновения
+        self.fading = False  # Флаг процесса исчезновения
 
-        :param rect: Прямоугольник (pygame.Rect), определяющий позицию и размер карты.
-        :param image: Изображение, которое будет показываться при открытии карты.
-        :param id: Уникальный идентификатор карты (нужен для проверки совпадений).
-        """
-        self.rect = rect  # Область, где расположена карта на экране
-        self.image = image  # Картинка, скрытая под "рубашкой"
-        self.id = id  # ID карты (используется для сравнения при совпадении)
-        self.revealed = False  # Показывает ли карта свою картинку (открыта или нет)
-        self.matched = False  # Совпала ли карта с другой (найдена пара)
-        self.back_color = (100, 100, 200)  # Цвет рубашки карты (задняя сторона)
+    def start_flip_animation(self):
+        self.animating = True
+        self.animation_angle = 0
+
+    def start_fade_out(self):
+        """Начинает анимацию исчезновения карты"""
+        self.fading = True
+        self.fade_alpha = 255
+
+    def update_animation(self):
+        if self.animating:
+            self.animation_angle += self.animation_speed
+            if self.animation_angle >= math.pi / 2:
+                self.animating = False
+                self.revealed = not self.revealed
+                self.animation_angle = 0
+
+        if self.matched and not self.animating:
+            # Анимация пульсации для совпавших карт
+            self.scale += self.pulse_direction
+            if self.scale > 1.1 or self.scale < 0.9:
+                self.pulse_direction *= -1
+
+        if self.fading:
+            self.fade_alpha -= 5
+            if self.fade_alpha <= 0:
+                self.fading = False
+                self.fade_alpha = 0
 
     def draw(self, screen):
-        """
-        Отрисовка карты на экране.
+        if self.fade_alpha == 0:
+            return  # Полностью прозрачная карта - не рисуем
 
-        :param screen: Поверхность Pygame, на которую будет рисоваться карта.
-        """
-        if self.matched:
-            return  # Если карта уже угадана, больше не рисуем её
+        if self.matched and not self.animating and not self.fading:
+            # Анимация пульсации для совпавших карт
+            scaled_width = int(self.rect.width * self.scale)
+            scaled_height = int(self.rect.height * self.scale)
+            offset_x = (self.rect.width - scaled_width) // 2
+            offset_y = (self.rect.height - scaled_height) // 2
 
-        if self.revealed:
-            # Если карта открыта, рисуем картинку
-            screen.blit(self.image, self.rect)
+            if self.revealed:
+                scaled_image = pygame.transform.scale(self.image, (scaled_width, scaled_height))
+                if self.fading:
+                    scaled_image.set_alpha(self.fade_alpha)
+                screen.blit(scaled_image, (self.rect.x + offset_x, self.rect.y + offset_y))
+            return
+
+        # Остальная логика отрисовки без изменений
+        if self.animating:
+            progress = math.sin(self.animation_angle)
+            width = max(1, int(self.rect.width * (1 - abs(progress))))
+            temp_rect = pygame.Rect(0, 0, width, self.rect.height)
+            temp_rect.center = self.rect.center
+
+            if not self.revealed:
+                if progress < 0:
+                    pygame.draw.rect(screen, self.back_color, temp_rect)
+                    pygame.draw.rect(screen, (255, 255, 255), temp_rect, 2)
+                else:
+                    temp_img = pygame.transform.scale(self.image, (width, self.rect.height))
+                    screen.blit(temp_img, temp_rect)
+            else:
+                if progress < 0:
+                    temp_img = pygame.transform.scale(self.image, (width, self.rect.height))
+                    screen.blit(temp_img, temp_rect)
+                else:
+                    pygame.draw.rect(screen, self.back_color, temp_rect)
+                    pygame.draw.rect(screen, (255, 255, 255), temp_rect, 2)
         else:
-            # Если карта закрыта, рисуем её рубашку
-            pygame.draw.rect(screen, self.back_color, self.rect)  # Заливка
-            pygame.draw.rect(screen, (255, 255, 255), self.rect, 2)  # Белая рамка
+            if self.revealed:
+                img = self.image.copy()
+                if self.fading:
+                    img.set_alpha(self.fade_alpha)
+                screen.blit(img, self.rect)
+            else:
+                back = pygame.Surface((self.rect.width, self.rect.height))
+                back.fill(self.back_color)
+                if self.fading:
+                    back.set_alpha(self.fade_alpha)
+                screen.blit(back, self.rect)
+                pygame.draw.rect(screen, (255, 255, 255), self.rect, 2)
 
     def handle_click(self, pos):
-        """
-        Обработка клика по карте.
-
-        :param pos: Координаты курсора мыши при клике.
-        :return: True, если карта была успешно открыта; иначе False.
-        """
-        if (
-            self.rect.collidepoint(pos)  # Клик попал внутрь карты
-            and not self.revealed         # Карта еще не была открыта
-            and not self.matched          # И не совпала ранее
-        ):
-            self.revealed = True  # Открываем карту
+        """Обрабатывает клик по карте"""
+        if (self.rect.collidepoint(pos) and         # Клик попал внутрь карты
+            not self.revealed and                   # Карта еще не была открыта
+            not self.matched and                    # И не совпала ранее
+            not self.animating and                  # И не в процессе анимации
+            self.fade_alpha == 255):                # И не исчезает
+            self.start_flip_animation()
             return True
-        return False  # Ничего не произошло
-
+        return False
     def hide(self):
-        """
-        Закрывает карту, если она не была угадана.
-        """
-        if not self.matched:
-            self.revealed = False  # Закрываем изображение
+        """Закрывает карту, если она не была угадана"""
+        if not self.matched and self.revealed:
+            self.start_flip_animation()  # Начинаем анимацию закрытия
 
     def mark_matched(self):
-        """
-        Помечает карту как угаданную (совпавшую с другой).
-        """
+        """Помечает карту как угаданную"""
         self.matched = True

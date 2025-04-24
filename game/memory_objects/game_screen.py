@@ -24,8 +24,39 @@ class GameScreen:
         self.remaining_moves = settings.max_moves  # Остаток ходов
         self.game_over_type = None  # Статус завершения игры ("Победа", "Проигрыш", "back")
         self.score = 0  # Очки игрока
+        self.match_timer = 0  # Таймер для задержки исчезновения совпавших карт
+        self.matched_pairs = []  # Список для хранения совпавших пар
+        self.showing_match = False  # Флаг отображения совпадения
+        self.match_display_time = 0  # Время отображения совпадения
         self.back_button_rect = pygame.Rect(20, 20, 100, 40)  # Кнопка "Назад"
+
+        # Загрузка звуков
+        self.sounds = {
+            'flip': pygame.mixer.Sound(self.settings.sound_flip),
+            'match': pygame.mixer.Sound(self.settings.sound_match),
+            'mismatch': pygame.mixer.Sound(self.settings.sound_mismatch),
+            'win': pygame.mixer.Sound(self.settings.sound_win),
+            'lose': pygame.mixer.Sound(self.settings.sound_lose),
+            'button': pygame.mixer.Sound(self.settings.sound_button)
+        }
+
+        # Анимационные переменные
+        self.message_alpha = 0
+        self.message_text = ""
+        self.message_timer = 0
+
         self._generate_cards()  # Генерация игрового поля
+
+    def play_sound(self, sound_name):
+        """Воспроизводит звуковой эффект"""
+        if sound_name in self.sounds:
+            self.sounds[sound_name].play()
+
+    def show_message(self, text, duration):
+        """Показывает временное сообщение на экране"""
+        self.message_text = text
+        self.message_alpha = 3000
+        self.message_timer = time.time() + duration
 
     def _generate_cards(self):
         """
@@ -78,6 +109,7 @@ class GameScreen:
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             # Проверка нажатия на кнопку "Назад"
             if self.back_button_rect.collidepoint(event.pos):
+                self.play_sound('button')
                 self.game_over_type = "back"
                 return
 
@@ -85,11 +117,16 @@ class GameScreen:
         if self.game_over_type:
             return
 
+        if self.showing_match or self.game_over_type:
+            return
+
         # Обработка клика по карточке
-        if event.type == pygame.MOUSEBUTTONDOWN and not self.second_card and self.remaining_moves > 0:
+        if (event.type == pygame.MOUSEBUTTONDOWN and not self.second_card and
+                self.remaining_moves > 0):
             pos = pygame.mouse.get_pos()
             for card in self.cards:
-                if card.handle_click(pos):
+                if card.handle_click(pos) and card not in [c for pair in self.matched_pairs for c in pair]:
+                    self.play_sound('flip')
                     if not self.first_card:
                         self.first_card = card
                     elif card != self.first_card:
@@ -106,25 +143,60 @@ class GameScreen:
         """
         self.remaining_time = remaining_time
 
-        # Если выбраны две карты — проверяем их на совпадение
-        if self.first_card and self.second_card:
+        # Обновление анимации всех карт
+        for card in self.cards:
+            card.update_animation()
+
+        # Обновление анимации сообщения
+        if self.message_alpha > 0 and time.time() < self.message_timer:
+            self.message_alpha -= 1
+        else:
+            self.message_text = ""
+
+        # Обработка совпадения карт
+        if (self.first_card and self.second_card and
+                not self.first_card.animating and not self.second_card.animating):
+
             if time.time() - self.last_flip_time > 1:
                 if self.first_card.id == self.second_card.id:
+                    # Совпадение найдено
                     self.first_card.mark_matched()
                     self.second_card.mark_matched()
+                    self.matched_pairs.append((self.first_card, self.second_card))
+                    self.play_sound('match')
+                    self.show_message("Совпадение!", 1.5)
+                    self.showing_match = True
+                    self.match_display_time = time.time() + 1
                 else:
+                    # Не совпало
                     self.first_card.hide()
                     self.second_card.hide()
+                    self.play_sound('mismatch')
+                    self.show_message("Не совпало!", 1.5)
+
                 self.first_card = None
                 self.second_card = None
+
+        # Запуск исчезновения совпавших карт после задержки
+        if (self.showing_match and time.time() > self.match_display_time and
+                self.matched_pairs):
+
+            for card1, card2 in self.matched_pairs:
+                card1.start_fade_out()
+                card2.start_fade_out()
+
+            self.matched_pairs = []
+            self.showing_match = False
 
         # Проверка на победу (все карты открыты)
         if all(card.matched for card in self.cards):
             self.game_over_type = "Победа!"
+            self.play_sound('win')
             self.calculate_score()
         # Проверка на проигрыш (время или ходы закончились)
         elif self.remaining_time <= 0 or self.remaining_moves <= 0:
             self.game_over_type = "Проигрыш!"
+            self.play_sound('lose')
             self.calculate_score(failed=True)
 
     def calculate_score(self, failed=False):
@@ -149,6 +221,13 @@ class GameScreen:
 
         for card in self.cards:
             card.draw(self.screen)  # Рисуем карты
+
+        # Рисуем временное сообщение
+        if self.message_text:
+            text_surface = self.font.render(self.message_text, True, (255, 255, 255))
+            text_surface.set_alpha(self.message_alpha)
+            text_rect = text_surface.get_rect(center=(self.settings.screen_width // 2, 70))
+            self.screen.blit(text_surface, text_rect)
 
         # Отображаем текст с оставшимися ходами и временем
         moves_text = self.font.render(f"Ходы: {self.remaining_moves}", True, (255, 255, 255))
